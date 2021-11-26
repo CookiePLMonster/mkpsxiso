@@ -4,6 +4,8 @@
 #include "xa.h"
 
 #include <algorithm>
+#include <cstring>
+#include <cstdarg>
 
 char rootname[] = { "<root>" };
 
