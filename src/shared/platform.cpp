@@ -1,18 +1,24 @@
 #include "platform.h"
 #include "cd.h"
 
-#if defined(_WIN32)
+#ifdef _WIN32
 #define NOMINMAX
 #include <windows.h>
 #include <io.h>
 #include <fcntl.h>
+#endif
+
+#ifdef __linux__
+#include <fcntl.h>
+#include <unistd.h>
+//#include <io.h>
+#endif
 
 #include <string>
 #include <vector>
-#endif
 
 #include <sys/stat.h>
-
+#include <sys/types.h>
 #if defined(_WIN32)
 static std::wstring UTF8ToUTF16(std::string_view str)
 {
@@ -65,13 +71,13 @@ FILE* OpenFile(const std::filesystem::path& path, const char* mode)
 #endif
 }
 
-std::optional<struct _stat64> Stat(const std::filesystem::path& path)
+std::optional<struct stat64> Stat(const std::filesystem::path& path)
 {
-	struct _stat64 fileAttrib;
+	struct stat64 fileAttrib;
 #if defined(_WIN32)
 	if (_wstat64(path.c_str(), &fileAttrib) != 0)
 #else
-    if (_stat64(path.c_str(), &fileAttrib) != 0)
+    if (stat64(path.c_str(), &fileAttrib) != 0)
 #endif
 	{
 		return std::nullopt;
@@ -118,7 +124,7 @@ void UpdateTimestamps(const std::filesystem::path& path, const cd::ISO_DATESTAMP
 #endif
 }
 
-extern int Main(int argc, const char* argv[]);
+extern int Main(int argc, char* argv[]);
 
 #if defined(_WIN32)
 int wmain(int argc, wchar_t* argv[])

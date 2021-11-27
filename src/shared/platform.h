@@ -18,6 +18,6 @@ namespace cd
 }
 
 FILE* OpenFile(const std::filesystem::path& path, const char* mode);
-std::optional<struct _stat64> Stat(const std::filesystem::path& path);
+std::optional<struct stat64> Stat(const std::filesystem::path& path);
 int64_t GetSize(const std::filesystem::path& path);
 void UpdateTimestamps(const std::filesystem::path& path, const cd::ISO_DATESTAMP& entryDate);

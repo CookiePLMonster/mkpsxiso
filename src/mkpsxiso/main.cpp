@@ -42,7 +42,7 @@ int PackWaveFile(cd::IsoWriter* writer, const std::filesystem::path& wavFile);
 int compare( const char* a, const char* b );
 
 
-int Main(int argc, const char* argv[])
+int Main(int argc, char* argv[])
 {
 	// Parse arguments
 	for ( int i=1; i<argc; i++)
