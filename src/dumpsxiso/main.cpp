@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <memory>
 
+#include "platform.h"
 #include "cd.h"
 #include "xa.h"
 #include "cdreader.h"
@@ -23,36 +24,9 @@
 	#include <sys/stat.h>
 #endif
 
-// Printf format for std::filesystem::path::c_str()
-// TODO: Move to some shared file
-#if defined(_WIN32)
-#define PRFILESYSTEM_PATH "ws"
-#else
-#define PRFILESYSTEM_PATH "s"
-#endif
-
-FILE* fopen(const std::filesystem::path& path, const char* mode)
-{
-#if defined(_WIN32)
-	const std::string_view mode_view(mode);
-	std::wstring wmode;
-	int count = MultiByteToWideChar(CP_UTF8, 0, mode_view.data(), mode_view.length(), nullptr, 0);
-	if (count != 0)
-	{
-		wmode.resize(count);
-		MultiByteToWideChar(CP_UTF8, 0, mode_view.data(), mode_view.length(), wmode.data(), count);
-	}
-	FILE* file = nullptr;
-	_wfopen_s(&file, path.c_str(), wmode.c_str());
-	return file;
-#else
-	return ::fopen(path.c_str(), mode);
-#endif
-}
-
 namespace param {
 
-    char*	isoFile=NULL;
+    std::filesystem::path isoFile;
     std::filesystem::path outPath;
     std::filesystem::path xmlFile;
 
@@ -130,56 +104,13 @@ std::unique_ptr<cd::ISO_LICENSE> ReadLicense(cd::IsoReader& reader) {
 	return license;
 }
 
-#if defined(_WIN32)
-static FILETIME TimetToFileTime(time_t t)
-{
-	FILETIME ft;
-    LARGE_INTEGER ll;
-	ll.QuadPart = t * 10000000ll + 116444736000000000ll;
-    ft.dwLowDateTime = ll.LowPart;
-    ft.dwHighDateTime = ll.HighPart;
-	return ft;
-}
-
-// TODO: Move to a header shared with mkpsxiso
-time_t timegm(struct tm* tm)
-{
-	return _mkgmtime(tm);
-}
-#endif
-
-void UpdateTimestamps(const std::filesystem::path& path, const cd::ISO_DATESTAMP& entryDate)
-{
-// utime can't update timestamps of directories, so a platform-specific approach is needed
-#if defined(_WIN32)
-	HANDLE file = CreateFileW(path.c_str(), FILE_WRITE_ATTRIBUTES, 0, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
-	if (file != INVALID_HANDLE_VALUE)
-	{
-		tm timeBuf {};
-		timeBuf.tm_year = entryDate.year;
-		timeBuf.tm_mon = entryDate.month - 1;
-		timeBuf.tm_mday = entryDate.day;
-		timeBuf.tm_hour = entryDate.hour;
-		timeBuf.tm_min = entryDate.minute - (15 * entryDate.GMToffs);
-		timeBuf.tm_sec = entryDate.second;
-
-		const FILETIME ft = TimetToFileTime(timegm(&timeBuf));
-		SetFileTime(file, &ft, nullptr, &ft);
-
-		CloseHandle(file);
-	}
-#else
-	// TODO: Do
-#endif
-}
-
 void SaveLicense(const cd::ISO_LICENSE& license) {
     const std::filesystem::path outputPath = param::outPath / "license_data.dat";
 
-	FILE* outFile = fopen(outputPath.c_str(), "wb");
+	FILE* outFile = OpenFile(outputPath, "wb");
 
     if (outFile == NULL) {
-		printf("ERROR: Cannot create license file %" PRFILESYSTEM_PATH "...", outputPath.c_str());
+		printf("ERROR: Cannot create license file %" PRFILESYSTEM_PATH "...", outputPath.lexically_normal().c_str());
         return;
     }
 
@@ -213,7 +144,7 @@ void ParseDirectories(cd::IsoReader& reader, int offs, tinyxml2::XMLDocument* do
 
         } else
 		{
-			printf("   Extracting %s...\n%" PRFILESYSTEM_PATH "\n", dirEntries.dirEntryList[e].identifier, outputPath.c_str());
+			printf("   Extracting %s...\n%" PRFILESYSTEM_PATH "\n", dirEntries.dirEntryList[e].identifier, outputPath.lexically_normal().c_str());
 
             if (element != NULL) {
 
@@ -274,10 +205,10 @@ void ParseDirectories(cd::IsoReader& reader, int offs, tinyxml2::XMLDocument* do
 
 				reader.SeekToSector(dirEntries.dirEntryList[e].entryOffs.lsb);
 
-				outFile = fopen(outputPath.c_str(), "wb");
+				outFile = OpenFile(outputPath, "wb");
 
 				if (outFile == NULL) {
-					printf("ERROR: Cannot create file %" PRFILESYSTEM_PATH "...", outputPath.c_str());
+					printf("ERROR: Cannot create file %" PRFILESYSTEM_PATH "...", outputPath.lexically_normal().c_str());
 					return;
 				}
 
@@ -312,7 +243,7 @@ void ParseDirectories(cd::IsoReader& reader, int offs, tinyxml2::XMLDocument* do
 				int result = reader.SeekToSector(dirEntries.dirEntryList[e].entryOffs.lsb);
 
 				if (result) {
-					printf("WARNING: The CDDA file %" PRFILESYSTEM_PATH " is out of the iso file bounds.\n", outputPath.c_str());
+					printf("WARNING: The CDDA file %" PRFILESYSTEM_PATH " is out of the iso file bounds.\n", outputPath.lexically_normal().c_str());
 					printf("This usually means that the game has audio tracks, and they are on separate files.\n");
 					printf("As DUMPSXISO does not support dumping from a cue file, you should use an iso file containing all tracks.\n\n");
 					printf("DUMPSXISO will write the file as a dummy (silent) cdda file.\n");
@@ -320,10 +251,10 @@ void ParseDirectories(cd::IsoReader& reader, int offs, tinyxml2::XMLDocument* do
 					printf("If it is not dummy, you WILL lose this audio data in the rebuilt iso.\n");
 				}
 
-				outFile = fopen(outputPath.c_str(), "wb");
+				outFile = OpenFile(outputPath, "wb");
 
 				if (outFile == NULL) {
-					printf("ERROR: Cannot create file %" PRFILESYSTEM_PATH "...", outputPath.c_str());
+					printf("ERROR: Cannot create file %" PRFILESYSTEM_PATH "...", outputPath.lexically_normal().c_str());
 					return;
 				}
 
@@ -368,10 +299,10 @@ void ParseDirectories(cd::IsoReader& reader, int offs, tinyxml2::XMLDocument* do
 
 				reader.SeekToSector(dirEntries.dirEntryList[e].entryOffs.lsb);
 
-				outFile = fopen(outputPath.c_str(), "wb");
+				outFile = OpenFile(outputPath, "wb");
 
 				if (outFile == NULL) {
-					printf("ERROR: Cannot create file %" PRFILESYSTEM_PATH "...", outputPath.c_str());
+					printf("ERROR: Cannot create file %" PRFILESYSTEM_PATH "...", outputPath.lexically_normal().c_str());
 					return;
 				}
 
@@ -508,7 +439,7 @@ void ParseISO(cd::IsoReader& reader) {
 		baseElement->InsertEndChild(trackElement);
 		xmldoc.InsertEndChild(baseElement);
 
-		if (FILE* file = fopen(param::xmlFile, "w"); file != nullptr)
+		if (FILE* file = OpenFile(param::xmlFile, "w"); file != nullptr)
 		{
 			xmldoc.SaveFile(file);
 			fclose(file);
@@ -529,9 +460,8 @@ void ParseISO(cd::IsoReader& reader) {
     SaveLicense(*license);
 }
 
-int main(int argc, char *argv[]) {
-
-
+int Main(int argc, const char *argv[])
+{
     printf("DUMPSXISO " VERSION " - PlayStation ISO dumping tool\n");
     printf("2017 Meido-Tek Productions (Lameguy64), 2020 Phoenix (SadNES cITy).\n\n");
 
@@ -556,13 +486,13 @@ int main(int argc, char *argv[]) {
 			// Directory path
             if (strcmp("x", &argv[i][1]) == 0) {
 
-                param::outPath = std::filesystem::path(argv[i+1]).lexically_normal();
+                param::outPath = std::filesystem::u8path(argv[i+1]).lexically_normal();
 
                 i++;
 
             } else if (strcmp("s", &argv[i][1]) == 0) {
 
-                param::xmlFile = argv[i+1];
+                param::xmlFile = std::filesystem::u8path(argv[i+1]);
                 i++;
 
             } else if (strcmp("p", &argv[i][1]) == 0) {
@@ -578,9 +508,9 @@ int main(int argc, char *argv[]) {
 
         } else {
 
-			if (param::isoFile == NULL) {
+			if (param::isoFile.empty()) {
 
-				param::isoFile = argv[i];
+				param::isoFile = std::filesystem::u8path(argv[i]);
 
 			} else {
 
@@ -593,7 +523,7 @@ int main(int argc, char *argv[]) {
 
     }
 
-	if (param::isoFile == NULL) {
+	if (param::isoFile.empty()) {
 
 		printf("No iso file specified.\n");
 		return(EXIT_FAILURE);
@@ -605,14 +535,14 @@ int main(int argc, char *argv[]) {
 
 	if (!reader.Open(param::isoFile)) {
 
-		printf("ERROR: Cannot open file %s...\n", param::isoFile);
+		printf("ERROR: Cannot open file %" PRFILESYSTEM_PATH "...\n", param::isoFile.lexically_normal().c_str());
 		return(EXIT_FAILURE);
 
 	}
 
 	if (!param::outPath.empty())
 	{
-		printf("Output directory : %" PRFILESYSTEM_PATH "\n", param::outPath.c_str());
+		printf("Output directory : %" PRFILESYSTEM_PATH "\n", param::outPath.lexically_normal().c_str());
 	}
 
     ParseISO(reader);
