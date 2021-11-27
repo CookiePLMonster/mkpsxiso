@@ -20,9 +20,6 @@
 
 #include <time.h>
 
-#if !defined(_WIN32)
-	#include <sys/stat.h>
-#endif
 
 namespace param {
 

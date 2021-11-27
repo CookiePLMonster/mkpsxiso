@@ -4,21 +4,15 @@
 #ifdef _WIN32
 #define NOMINMAX
 #include <windows.h>
-#include <io.h>
-#include <fcntl.h>
 #endif
 
-#ifdef __linux__
+#include <io.h>
 #include <fcntl.h>
-#include <unistd.h>
-//#include <io.h>
-#endif
+#include <sys/stat.h>
 
 #include <string>
 #include <vector>
 
-#include <sys/stat.h>
-#include <sys/types.h>
 #if defined(_WIN32)
 static std::wstring UTF8ToUTF16(std::string_view str)
 {
@@ -136,11 +130,11 @@ int wmain(int argc, wchar_t* argv[])
 		u8Arguments.emplace_back(UTF16ToUTF8(argv[i]));
 	}
 
-	std::vector<const char*> u8argv;
+	std::vector<char*> u8argv;
 	u8Arguments.reserve(argc + 1);
 	for (std::string& str : u8Arguments)
 	{
-		u8argv.emplace_back(str.c_str());
+		u8argv.emplace_back(str.data());
 	}
 	u8argv.emplace_back(nullptr);
 
