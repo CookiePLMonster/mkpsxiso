@@ -6,6 +6,7 @@
 #include <optional>
 
 #include <sys/types.h>
+#include <sys/stat.h>
 
 // Printf format for std::filesystem::path::c_str()
 #ifdef _WIN32

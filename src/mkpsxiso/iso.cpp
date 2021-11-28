@@ -8,8 +8,6 @@
 #include <cstring>
 #include <cstdarg>
 
-#include <sys/stat.h>
-
 char rootname[] = { "<root>" };
 
 static bool icompare_func(unsigned char a, unsigned char b)
