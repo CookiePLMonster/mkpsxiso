@@ -4,9 +4,9 @@
 #ifdef _WIN32
 #define NOMINMAX
 #include <windows.h>
+#include <io.h>
 #endif
 
-#include <io.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 

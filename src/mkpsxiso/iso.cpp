@@ -8,6 +8,8 @@
 #include <cstring>
 #include <cstdarg>
 
+#include <sys/stat.h>
+
 char rootname[] = { "<root>" };
 
 static bool icompare_func(unsigned char a, unsigned char b)
@@ -324,7 +326,7 @@ iso::DIRENTRY& iso::DirTreeClass::CreateRootDirectory(EntryList& entries, const 
 
 bool iso::DirTreeClass::AddFileEntry(const char* id, int type, const std::filesystem::path& srcfile, const EntryAttributes& attributes)
 {
-	auto fileAttrib = Stat(srcfile);
+    auto fileAttrib = Stat(srcfile);
     if ( !fileAttrib )
 	{
 		if ( !global::QuietMode )
