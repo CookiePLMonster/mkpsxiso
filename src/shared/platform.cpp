@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-#if defined(_WIN32)
+#ifdef _WIN32
 static std::wstring UTF8ToUTF16(std::string_view str)
 {
 	std::wstring result;
@@ -56,7 +56,7 @@ time_t timegm(struct tm* tm)
 
 FILE* OpenFile(const std::filesystem::path& path, const char* mode)
 {
-#if defined(_WIN32)
+#ifdef _WIN32
 	FILE* file = nullptr;
 	_wfopen_s(&file, path.c_str(), UTF8ToUTF16(mode).c_str());
 	return file;
@@ -68,7 +68,7 @@ FILE* OpenFile(const std::filesystem::path& path, const char* mode)
 std::optional<struct stat64> Stat(const std::filesystem::path& path)
 {
 	struct stat64 fileAttrib;
-#if defined(_WIN32)
+#ifdef _WIN32
 	if (_wstat64(path.c_str(), &fileAttrib) != 0)
 #else
     if (stat64(path.c_str(), &fileAttrib) != 0)
@@ -99,7 +99,7 @@ void UpdateTimestamps(const std::filesystem::path& path, const cd::ISO_DATESTAMP
 	const time_t time = timegm(&timeBuf);
 
 // utime can't update timestamps of directories on Windows, so a platform-specific approach is needed
-#if defined(_WIN32)
+#ifdef _WIN32
 	HANDLE file = CreateFileW(path.c_str(), FILE_WRITE_ATTRIBUTES, 0, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr);
 	if (file != INVALID_HANDLE_VALUE)
 	{
@@ -120,7 +120,7 @@ void UpdateTimestamps(const std::filesystem::path& path, const cd::ISO_DATESTAMP
 
 extern int Main(int argc, char* argv[]);
 
-#if defined(_WIN32)
+#ifdef _WIN32
 int wmain(int argc, wchar_t* argv[])
 {
 	std::vector<std::string> u8Arguments;
