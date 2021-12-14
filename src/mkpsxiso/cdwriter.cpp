@@ -257,7 +257,7 @@ size_t cd::IsoWriter::WriteBytesXA(void* data, size_t bytes, int edcEccEncode) {
 
 }
 
-size_t cd::IsoWriter::WriteBytesRaw(void* data, size_t bytes) {
+size_t cd::IsoWriter::WriteBytesRaw(const void* data, size_t bytes) {
 
     size_t writeBytes = 0;
 
@@ -307,8 +307,8 @@ size_t cd::IsoWriter::WriteBytesRaw(void* data, size_t bytes) {
 
 size_t  cd::IsoWriter::WriteBlankSectors(const size_t count)
 {
-	char blank[CD_SECTOR_SIZE];
-	memset( blank, 0x00, CD_SECTOR_SIZE );
+	const char blank[CD_SECTOR_SIZE] {};
+	
 	size_t bytesWritten = 0;
 	for(size_t i = 0; i < count; i++)
 	{
