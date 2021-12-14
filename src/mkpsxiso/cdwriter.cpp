@@ -305,6 +305,18 @@ size_t cd::IsoWriter::WriteBytesRaw(void* data, size_t bytes) {
 
 }
 
+size_t  cd::IsoWriter::WriteBlankSectors(const size_t count)
+{
+	char blank[CD_SECTOR_SIZE];
+	memset( blank, 0x00, CD_SECTOR_SIZE );
+	size_t bytesWritten = 0;
+	for(size_t i = 0; i < count; i++)
+	{
+		bytesWritten += WriteBytesRaw( blank, CD_SECTOR_SIZE );
+	}
+	return bytesWritten;
+}
+
 int cd::IsoWriter::CurrentSector() {
 
 	return currentSector;

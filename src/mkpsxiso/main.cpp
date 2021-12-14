@@ -352,7 +352,6 @@ int Main(int argc, char* argv[])
 		}
 
 		global::trackNum = 1;
-		int firstCDDAdone = false;
 
 		// Parse tracks
 		while ( trackElement != nullptr )
@@ -502,30 +501,13 @@ int Main(int argc, char* argv[])
 					{
 						int trackLBA = writer.SeekToEnd();
 
-						// Add PREGAP of 2 seconds on first audio track only
-						if ( ( !firstCDDAdone ) && ( global::trackNum < 3 ) )
-						{
-
-							fprintf( cuefp, "    PREGAP 00:02:00\n" );
-							firstCDDAdone = true;
-
-						} else {
-
-							fprintf( cuefp, "    INDEX 00 %02d:%02d:%02d\n",
+                        // TODO configurable pregap
+						fprintf( cuefp, "    INDEX 00 %02d:%02d:%02d\n",
 								(trackLBA/75)/60, (trackLBA/75)%60,
 								trackLBA%75 );
 
-							char blank[CD_SECTOR_SIZE];
-							memset( blank, 0x00, CD_SECTOR_SIZE );
-
-							for ( int sp=0; sp<150; sp++ )
-							{
-								writer.WriteBytesRaw( blank, CD_SECTOR_SIZE );
-							}
-
-							trackLBA += 150;
-
-						}
+						writer.WriteBlankSectors(150);
+						trackLBA += 150;
 
 						fprintf( cuefp, "    INDEX 01 %02d:%02d:%02d\n",
 							(trackLBA/75)/60, (trackLBA/75)%60, trackLBA%75 );
