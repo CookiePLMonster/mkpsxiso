@@ -293,7 +293,7 @@ iso::DIRENTRY& iso::DirTreeClass::CreateRootDirectory(EntryList& entries, const 
 {
 	DIRENTRY entry {};
 
-	entry.type		= EntryDir;
+	entry.type		= EntryType::EntryDir;
 	entry.subdir	= std::make_unique<DirTreeClass>(entries);
 	entry.date		= volumeDate;
 	entry.length	= entry.subdir->CalculateDirEntryLen();
@@ -303,7 +303,7 @@ iso::DIRENTRY& iso::DirTreeClass::CreateRootDirectory(EntryList& entries, const 
 	return entries.back();
 }
 
-bool iso::DirTreeClass::AddFileEntry(const char* id, int type, const std::filesystem::path& srcfile, const EntryAttributes& attributes)
+bool iso::DirTreeClass::AddFileEntry(const char* id, EntryType type, const std::filesystem::path& srcfile, const EntryAttributes& attributes)
 {
     auto fileAttrib = Stat(srcfile);
     if ( !fileAttrib )
@@ -318,62 +318,8 @@ bool iso::DirTreeClass::AddFileEntry(const char* id, int type, const std::filesy
     }
 
 	// Check if XA data is valid
-	if ( type == EntryXA )
+	if ( type == EntryType::EntryXA )
 	{
-		// Check header
-		char buff[4];
-		FILE* fp = OpenFile(srcfile, "rb");
-		fread(buff, 1, 4, fp);
-		fclose(fp);
-
-		// Check if its a RIFF (WAV container)
-		if ( strncmp(buff, "RIFF", 4) == 0 )
-		{
-			if (!global::QuietMode)
-			{
-				printf("      ");
-			}
-
-			printf("ERROR: %" PRFILESYSTEM_PATH " is a WAV or is not properly ripped!\n", srcfile.lexically_normal().c_str());
-
-			return false;
-		}
-
-		// Check if size is a multiple of 2336 bytes
-		if ( ( fileAttrib->st_size % 2336 ) != 0 )
-		{
-			if ( !global::QuietMode )
-			{
-				printf("      ");
-			}
-
-			printf("ERROR: %" PRFILESYSTEM_PATH " is not a multiple of 2336 bytes.\n", srcfile.lexically_normal().c_str());
-
-			if ( !global::QuietMode )
-			{
-				printf("      ");
-			}
-
-			printf("Did you create your multichannel XA file with subheader data?\n");
-
-			return false;
-		}
-
-		// Check if first sub header is valid usually by checking
-		// if the first four bytes match the next four bytes
-		else if ( ((int*)buff)[0] == ((int*)buff)[1] )
-		{
-			if ( !global::QuietMode )
-			{
-				printf("      ");
-			}
-
-			printf("WARNING: %" PRFILESYSTEM_PATH " may not have a valid subheader. ", srcfile.lexically_normal().c_str());
-		}
-
-	// Check STR data
-	} else if ( type == EntrySTR ) {
-
 		// Check header
 		char buff[4];
 		FILE* fp = OpenFile(srcfile, "rb");
@@ -398,7 +344,7 @@ bool iso::DirTreeClass::AddFileEntry(const char* id, int type, const std::filesy
 		{
 			if ( ( fileAttrib->st_size % 2048) == 0 )
 			{
-				type = EntrySTR_DO;
+				type = EntryType::EntryXA_DO;
 			}
 			else
 			{
@@ -432,7 +378,7 @@ bool iso::DirTreeClass::AddFileEntry(const char* id, int type, const std::filesy
 		const DIRENTRY& entry = e.get();
 		if ( !entry.id.empty() )
 		{
-            if ( ( entry.type == EntryFile )
+            if ( ( entry.type == EntryType::EntryFile )
 				&& ( icompare( entry.id, temp_name ) ) )
 			{
 				if (!global::QuietMode)
@@ -464,11 +410,11 @@ bool iso::DirTreeClass::AddFileEntry(const char* id, int type, const std::filesy
 		entry.srcfile = srcfile;
 	}
 
-	if ( type == EntryDA )
+	if ( type == EntryType::EntryDA )
 	{
 		entry.length = GetWavSize( srcfile );
 	}
-	else if ( type != EntryDir )
+	else if ( type != EntryType::EntryDir )
 	{
 		entry.length = fileAttrib->st_size;
 	}
@@ -488,7 +434,7 @@ void iso::DirTreeClass::AddDummyEntry(int sectors, int type)
 
 	// TODO: HUGE HACK, will be removed once EntryDummy is unified with EntryFile again
 	entry.perms	=	type;
-	entry.type		= EntryDummy;
+	entry.type		= EntryType::EntryDummy;
 	entry.length	= 2048*sectors;
 
 	entries.emplace_back(std::move(entry));
@@ -503,7 +449,7 @@ iso::DirTreeClass* iso::DirTreeClass::AddSubDirEntry(const char* id, const std::
 	// of the directory. This check probably needs to be moved outside of the function.
 	auto currentSubdir = std::find_if(entries.begin(), entries.end(), [id](const auto& e)
 		{
-			return e.type == EntryDir && e.id == id;
+			return e.type == EntryType::EntryDir && e.id == id;
 		});
 
 	if (currentSubdir != entries.end())
@@ -544,7 +490,7 @@ iso::DirTreeClass* iso::DirTreeClass::AddSubDirEntry(const char* id, const std::
 		}
 	}
 
-	entry.type		= EntryDir;
+	entry.type		= EntryType::EntryDir;
 	entry.subdir	= std::make_unique<DirTreeClass>(entries, this);
 	entry.attribs	= attributes.XAAttrib.value();
 	entry.perms		= attributes.XAPerm.value();
@@ -573,7 +519,7 @@ void iso::DirTreeClass::PrintRecordPath()
 int iso::DirTreeClass::CalculateTreeLBA(int lba)
 {
 	bool passedSector = false;
-	lba += CalculateDirEntryLen(&passedSector) / 2048;
+	lba += GetSizeInSectors(CalculateDirEntryLen(&passedSector));
 
 	if ( ( global::NoLimit == false) && passedSector )
 	{
@@ -599,22 +545,22 @@ int iso::DirTreeClass::CalculateTreeLBA(int lba)
 				entry.subdir->name = entry.id;
 			}
 
-			lba += entry.subdir->CalculateDirEntryLen() / 2048;
+			lba += GetSizeInSectors(entry.subdir->CalculateDirEntryLen());
 		}
 		else
 		{
 			// Increment LBA by the size of file
-			if ( entry.type == EntryFile || entry.type == EntrySTR_DO || entry.type == EntryDummy )
+			if ( entry.type == EntryType::EntryFile || entry.type == EntryType::EntryXA_DO || entry.type == EntryType::EntryDummy )
 			{
-				lba += (entry.length+2047)/2048;
+				lba += GetSizeInSectors(entry.length, 2048);
 			}
-			else if ( entry.type == EntryXA || entry.type == EntrySTR )
+			else if ( entry.type == EntryType::EntryXA )
 			{
-				lba += (entry.length+2335)/2336;
+				lba += GetSizeInSectors(entry.length, 2336);
 			}
-			else if ( entry.type == EntryDA )
+			else if ( entry.type == EntryType::EntryDA )
 			{
-				lba += ((entry.length+2351)/2352);
+				lba += GetSizeInSectors(entry.length, 2352);
 
 				// TODO: Configurable pregap
 				if (!firstDAWritten)
@@ -669,7 +615,7 @@ int iso::DirTreeClass::CalculateDirEntryLen(bool* passedSector) const
 		*passedSector = true;
 	}
 
-	return 2048*((dirEntryLen+2047)/2048);
+	return 2048 * GetSizeInSectors(dirEntryLen);
 }
 
 void iso::DirTreeClass::SortDirectoryEntries()
@@ -678,7 +624,7 @@ void iso::DirTreeClass::SortDirectoryEntries()
 	for ( const auto& e : entriesInDir )
 	{
 		const DIRENTRY& entry = e.get();
-		if ( entry.type == EntryDir )
+		if ( entry.type == EntryType::EntryDir )
 		{
 			// Perform recursive call
             if ( entry.subdir != nullptr )
@@ -688,7 +634,7 @@ void iso::DirTreeClass::SortDirectoryEntries()
 		}
 	}
 
-	std::sort(entriesInDir.begin(), entriesInDir.end(), [this](const auto& left, const auto& right)
+	std::sort(entriesInDir.begin(), entriesInDir.end(), [](const auto& left, const auto& right)
 		{
 			return left.get().id < right.get().id;
 		});
@@ -716,7 +662,7 @@ int iso::DirTreeClass::WriteDirEntries(cd::IsoWriter* writer, const DIRENTRY& di
 		if (i == 0)
 		{
 			// Current
-			dirlen = 2048*((CalculateDirEntryLen()+2047)/2048);
+			dirlen = 2048 * GetSizeInSectors(CalculateDirEntryLen());
 
 			dirEntry->entrySize = cd::SetPair32( dirlen );
 			dirEntry->entryOffs = cd::SetPair32( dir.lba );
@@ -730,7 +676,7 @@ int iso::DirTreeClass::WriteDirEntries(cd::IsoWriter* writer, const DIRENTRY& di
 			} else {
 				dirlen = CalculateDirEntryLen();
 			}
-			dirlen = 2048*((dirlen+2047)/2048);
+			dirlen = 2048 * GetSizeInSectors(dirlen);
 
 			dirEntry->entrySize = cd::SetPair32( dirlen );
 			dirEntry->entryOffs = cd::SetPair32( parentDir.lba );
@@ -769,7 +715,7 @@ int iso::DirTreeClass::WriteDirEntries(cd::IsoWriter* writer, const DIRENTRY& di
 		memset( entryBuff, 0x00, 128 );
 		cd::ISO_DIR_ENTRY* dirEntry = (cd::ISO_DIR_ENTRY*)entryBuff;
 
-		if ( entry.type == EntryDir )
+		if ( entry.type == EntryType::EntryDir )
 		{
 			dirEntry->flags = 0x02;
 		}
@@ -782,17 +728,17 @@ int iso::DirTreeClass::WriteDirEntries(cd::IsoWriter* writer, const DIRENTRY& di
 		int lba = entry.lba;
 		int length = 0;
 
-		if ( ( entry.type == EntryXA ) || ( entry.type == EntrySTR ) )
+		if ( entry.type == EntryType::EntryXA )
 		{
-			length = 2048*((entry.length+2335)/2336);
+			length = 2048* GetSizeInSectors(entry.length, 2336);
 		}
-		else if ( entry.type == EntrySTR_DO )
+		else if ( entry.type == EntryType::EntryXA_DO )
 		{
-			length = 2048*((entry.length+2047)/2048);
+			length = 2048 * GetSizeInSectors(entry.length, 2048);
 		}
-		else if ( entry.type == EntryDA )
+		else if ( entry.type == EntryType::EntryDA )
 		{
-			length = 2048*((entry.length+2351)/2352);
+			length = 2048 * GetSizeInSectors(entry.length, 2352);
 			lba += 150;
 		}
 		else
@@ -822,29 +768,27 @@ int iso::DirTreeClass::WriteDirEntries(cd::IsoWriter* writer, const DIRENTRY& di
 			xa->id[1] = 'A';
 
 			unsigned short attributes = entry.perms;
-			if ( (entry.type == EntryFile) ||
-				(entry.type == EntrySTR_DO) ||
-				(entry.type == EntryDummy) )
+			if ( (entry.type == EntryType::EntryFile) ||
+				(entry.type == EntryType::EntryXA_DO) ||
+				(entry.type == EntryType::EntryDummy) )
 			{
 				attributes |= 0x800;
 			}
-			else if (entry.type == EntryDA)
+			else if (entry.type == EntryType::EntryDA)
 			{
 				attributes |= 0x4000;
 			}
-			else if ( (entry.type == EntrySTR) ||
-				(entry.type == EntryXA) )
+			else if (entry.type == EntryType::EntryXA)
 			{
 				attributes |= entry.attribs != 0xFFu ? (entry.attribs << 8) : 0x3800;
 				xa->filenum = 1;
 			}
-			else if (entry.type == EntryDir)
+			else if (entry.type == EntryType::EntryDir)
 			{
 				attributes |= 0x8800;
 			}
 
-			if ( (entry.type == EntrySTR) ||
-				(entry.type == EntryXA) )
+			if (entry.type == EntryType::EntryXA)
 			{
 				xa->filenum = 1;
 			}
@@ -884,7 +828,7 @@ int iso::DirTreeClass::WriteDirectoryRecords(cd::IsoWriter* writer, const DIRENT
 	for ( const auto& e : entriesInDir )
 	{
 		const DIRENTRY& entry = e.get();
-		if ( entry.type == EntryDir )
+		if ( entry.type == EntryType::EntryDir )
 		{
 			if ( !entry.subdir->WriteDirectoryRecords(writer, entry, dir) )
 			{
@@ -903,7 +847,7 @@ int iso::DirTreeClass::WriteFiles(cd::IsoWriter* writer)
 		writer->SeekToSector( entry.lba );
 
 		// Write files as regular data sectors
-		if ( entry.type == EntryFile )
+		if ( entry.type == EntryType::EntryFile )
 		{
 			char buff[2048];
 
@@ -958,42 +902,16 @@ int iso::DirTreeClass::WriteFiles(cd::IsoWriter* writer)
 				}
 			}
 
-		// Write XA audio streams as Mode 2 Form 2 sectors without ECC
-		}
-		else if (entry.type == EntryXA)
-		{
-			char buff[2336];
-
-			if (!global::QuietMode)
-			{
-				printf( "      Packing XA %" PRFILESYSTEM_PATH "... ", entry.srcfile.lexically_normal().c_str() );
-			}
-
-			FILE *fp = OpenFile( entry.srcfile, "rb" );
-
-			while( !feof( fp ) )
-			{
-				fread( buff, 1, 2336, fp );
-				writer->WriteBytesXA(buff, 2336, cd::IsoWriter::EdcEccForm2);
-			}
-
-			fclose( fp );
-
-			if ( !global::QuietMode )
-			{
-				printf( "Done.\n" );
-			}
-
-		// Write STR video streams as Mode 2 Form 1 (video sectors) and Mode 2 Form 2 (XA audio sectors)
+		// Write XA/STR video streams as Mode 2 Form 1 (video sectors) and Mode 2 Form 2 (XA audio sectors)
 		// Video sectors have EDC/ECC while XA does not
 		}
-		else if ( entry.type == EntrySTR )
+		else if ( entry.type == EntryType::EntryXA )
 		{
 			char buff[2336];
 
 			if ( !global::QuietMode )
 			{
-				printf( "      Packing STR %" PRFILESYSTEM_PATH "... ", entry.srcfile.lexically_normal().c_str() );
+				printf( "      Packing XA %" PRFILESYSTEM_PATH "... ", entry.srcfile.lexically_normal().c_str() );
 			}
 
 			FILE *fp = OpenFile( entry.srcfile, "rb" );
@@ -1027,7 +945,7 @@ int iso::DirTreeClass::WriteFiles(cd::IsoWriter* writer)
 
 		// Write data only STR streams as Mode 2 Form 1
 		}
-		else if ( entry.type == EntrySTR_DO )
+		else if ( entry.type == EntryType::EntryXA_DO )
 		{
 			char buff[2048];
 
@@ -1035,7 +953,7 @@ int iso::DirTreeClass::WriteFiles(cd::IsoWriter* writer)
 			{
 				if ( !global::QuietMode )
 				{
-					printf( "      Packing STR-DO %" PRFILESYSTEM_PATH "... ", entry.srcfile.lexically_normal().c_str() );
+					printf( "      Packing XA-DO %" PRFILESYSTEM_PATH "... ", entry.srcfile.lexically_normal().c_str() );
 				}
 
 				FILE *fp = OpenFile( entry.srcfile, "rb" );
@@ -1080,7 +998,7 @@ int iso::DirTreeClass::WriteFiles(cd::IsoWriter* writer)
 
 		// Write DA files as audio tracks
 		}
-		else if ( entry.type == EntryDA )
+		else if ( entry.type == EntryType::EntryDA )
 		{
 			if ( !global::QuietMode )
 			{
@@ -1105,7 +1023,7 @@ int iso::DirTreeClass::WriteFiles(cd::IsoWriter* writer)
 			entry.subdir->WriteFiles( writer );
 		}*/
 		// Write dummies as gaps without data
-		else if ( entry.type == EntryDummy )
+		else if ( entry.type == EntryType::EntryDummy )
 		{
 			char buff[2048] {};
 
@@ -1148,7 +1066,7 @@ void iso::DirTreeClass::OutputHeaderListing(FILE* fp, int level) const
 	for ( const auto& e : entriesInDir )
 	{
 		const DIRENTRY& entry = e.get();
-		if ( !entry.id.empty() && entry.type != EntryDir )
+		if ( !entry.id.empty() && entry.type != EntryType::EntryDir )
 		{
 			std::string temp_name = "LBA_" + entry.id;
 
@@ -1175,7 +1093,7 @@ void iso::DirTreeClass::OutputHeaderListing(FILE* fp, int level) const
 	for ( const auto& e : entriesInDir )
 	{
 		const DIRENTRY& entry = e.get();
-		if ( entry.type == EntryDir )
+		if ( entry.type == EntryType::EntryDir )
 		{
 			fprintf( fp, "\n" );
 			entry.subdir->OutputHeaderListing( fp, level+1 );
@@ -1193,7 +1111,7 @@ int iso::DirTreeClass::WriteCueEntries(FILE* fp, int* trackNum) const
 	for ( const auto& e : entriesInDir )
 	{
 		const DIRENTRY& entry = e.get();
-		if ( entry.type == EntryDA )
+		if ( entry.type == EntryType::EntryDA )
 		{
 			*trackNum += 1;
 			fprintf( fp, "  TRACK %02d AUDIO\n", *trackNum );
@@ -1210,7 +1128,7 @@ int iso::DirTreeClass::WriteCueEntries(FILE* fp, int* trackNum) const
 				(trackLBA/75)/60, (trackLBA/75)%60, trackLBA%75 );
 
 		}
-		else if ( entry.type == EntryDir )
+		else if ( entry.type == EntryType::EntryDir )
 		{
 			entry.subdir->WriteCueEntries( fp, trackNum );
 		}
@@ -1234,24 +1152,20 @@ void iso::DirTreeClass::OutputLBAlisting(FILE* fp, int level) const
 
 		if ( !entry.id.empty() )
 		{
-			if ( entry.type == EntryFile )
+			if ( entry.type == EntryType::EntryFile )
 			{
 				fprintf( fp, "File  " );
 			}
-			else if ( entry.type == EntryDir )
+			else if ( entry.type == EntryType::EntryDir )
 			{
 				fprintf( fp, "Dir   " );
 			}
-			else if ( ( entry.type == EntrySTR ) ||
-				( entry.type == EntrySTR_DO ) )
-			{
-				fprintf( fp, "STR   " );
-			}
-			else if ( entry.type == EntryXA )
+			else if ( ( entry.type == EntryType::EntryXA ) ||
+				( entry.type == EntryType::EntryXA_DO ) )
 			{
 				fprintf( fp, "XA    " );
 			}
-			else if ( entry.type == EntryDA )
+			else if ( entry.type == EntryType::EntryDA )
 			{
 				fprintf( fp, "CDDA  " );
 			}
@@ -1264,9 +1178,9 @@ void iso::DirTreeClass::OutputLBAlisting(FILE* fp, int level) const
 		}
 
 		// Write size in sector units
-		if (entry.type != EntryDir)
+		if (entry.type != EntryType::EntryDir)
 		{
-			fprintf( fp, "%-10lld", ((entry.length+2047)/2048) );
+			fprintf( fp, "%-10u", GetSizeInSectors(entry.length) );
 		}
 		else
 		{
@@ -1282,7 +1196,7 @@ void iso::DirTreeClass::OutputLBAlisting(FILE* fp, int level) const
 		fprintf( fp, "%-12s", timecode );
 
 		// Write size in byte units
-		if (entry.type != EntryDir)
+		if (entry.type != EntryType::EntryDir)
 		{
 			fprintf( fp, "%-10lld", entry.length );
 		}
@@ -1292,13 +1206,13 @@ void iso::DirTreeClass::OutputLBAlisting(FILE* fp, int level) const
 		}
 
 		// Write source file path
-		if ( (!entry.id.empty()) && (entry.type != EntryDir) )
+		if ( (!entry.id.empty()) && (entry.type != EntryType::EntryDir) )
 		{
 			fprintf( fp, "%" PRFILESYSTEM_PATH, entry.srcfile.lexically_normal().c_str() );
 		}
 		fprintf( fp, "\n" );
 
-		if ( entry.type == EntryDir )
+		if ( entry.type == EntryType::EntryDir )
 		{
 			entry.subdir->OutputLBAlisting( fp, level+1 );
 		}
@@ -1319,7 +1233,7 @@ int iso::DirTreeClass::CalculatePathTableLen(const DIRENTRY& dirEntry) const
 	for ( const auto& e : entriesInDir )
 	{
 		const DIRENTRY& entry = e.get();
-		if ( entry.type == EntryDir )
+		if ( entry.type == EntryType::EntryDir )
 		{
 			len += entry.subdir->CalculatePathTableLen( entry );
 		}
@@ -1334,7 +1248,7 @@ std::unique_ptr<iso::PathTableClass> iso::DirTreeClass::GenPathTableSub(unsigned
 	for ( const auto& e : entriesInDir )
 	{
 		const DIRENTRY& entry = e.get();
-		if ( entry.type == EntryDir )
+		if ( entry.type == EntryType::EntryDir )
 		{
 			PathEntryClass pathEntry;
 
@@ -1350,7 +1264,7 @@ std::unique_ptr<iso::PathTableClass> iso::DirTreeClass::GenPathTableSub(unsigned
 	for ( const auto& e : entriesInDir )
 	{
 		const DIRENTRY& entry = e.get();
-		if ( entry.type == EntryDir )
+		if ( entry.type == EntryType::EntryDir )
 		{
 			auto& pathEntry = table->entries[entryID++];
 			auto sub = entry.subdir->GenPathTableSub(index, pathEntry.dir_index);
@@ -1391,7 +1305,7 @@ int iso::DirTreeClass::GetFileCountTotal() const
     for ( const auto& e : entriesInDir )
 	{
 		const DIRENTRY& entry = e.get();
-        if ( entry.type != EntryDir )
+        if ( entry.type != EntryType::EntryDir )
 		{
 			if ( !entry.id.empty() )
 			{
@@ -1414,7 +1328,7 @@ int iso::DirTreeClass::GetDirCountTotal() const
    for ( const auto& e : entriesInDir )
 	{
 		const DIRENTRY& entry = e.get();
-        if ( entry.type == EntryDir )
+        if ( entry.type == EntryType::EntryDir )
 		{
 			numdirs++;
             numdirs += entry.subdir->GetDirCountTotal();
@@ -1526,8 +1440,8 @@ void iso::WriteDescriptor(cd::IsoWriter* writer, const iso::IDENTIFIERS& id, con
 	}
 
 	const DirTreeClass* dirTree = root.subdir.get();
-	int pathTableLen = dirTree->CalculatePathTableLen(root);
-	int pathTableSectors = (pathTableLen+2047)/2048;
+	unsigned int pathTableLen = dirTree->CalculatePathTableLen(root);
+	unsigned int pathTableSectors = GetSizeInSectors(pathTableLen);
 
 	isoDescriptor.volumeSetSize = cd::SetPair16( 1 );
 	isoDescriptor.volumeSeqNumber = cd::SetPair16( 1 );
@@ -1540,7 +1454,7 @@ void iso::WriteDescriptor(cd::IsoWriter* writer, const iso::IDENTIFIERS& id, con
 	isoDescriptor.rootDirRecord.entryOffs = cd::SetPair32(
 		18+(pathTableSectors*4) );
 	isoDescriptor.rootDirRecord.entrySize = cd::SetPair32(
-		2048*((dirTree->CalculateDirEntryLen()+2047)/2048) );
+		2048 * GetSizeInSectors(dirTree->CalculateDirEntryLen()) );
 	isoDescriptor.rootDirRecord.flags = 0x02;
 	isoDescriptor.rootDirRecord.volSeqNum = cd::SetPair16( 1 );
 	isoDescriptor.rootDirRecord.identifierLen = 1;

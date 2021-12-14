@@ -854,7 +854,7 @@ int ParseISOfileSystem(cd::IsoWriter* writer, FILE* cue_fp, const tinyxml2::XMLE
 	// Calculate directory tree LBAs and retrieve size of image
 	int pathTableLen = dirTree->CalculatePathTableLen(root);
 
-	const int rootLBA = 17+(((pathTableLen+2047)/2048)*4);
+	const int rootLBA = 17+(GetSizeInSectors(pathTableLen)*4);
 	int totalLen = dirTree->CalculateTreeLBA(rootLBA);
 
 	if ( !global::QuietMode )
@@ -965,7 +965,7 @@ int ParseISOfileSystem(cd::IsoWriter* writer, FILE* cue_fp, const tinyxml2::XMLE
 	}
 
 	// Write padding which will be written with proper data later on
-	for ( int i=0; i<18+(((dirTree->CalculatePathTableLen(root)+2047)/2048)*4); i++ )
+	for ( int i=0; i<18+(GetSizeInSectors(dirTree->CalculatePathTableLen(root))*4); i++ )
 	{
 		char buff[2048];
 		memset( buff, 0x00, 2048 );
@@ -1088,23 +1088,23 @@ static bool ParseFileEntry(iso::DirTreeClass* dirTree, const tinyxml2::XMLElemen
 		return false;
 	}
 
-	int entry = iso::EntryFile;
+	EntryType entry = EntryType::EntryFile;
 
 	const char* typeElement = dirElement->Attribute(xml::attrib::ENTRY_TYPE);
 	if ( typeElement != nullptr )
 	{
 		if ( compare( "data", typeElement ) == 0 )
 		{
-			entry = iso::EntryFile;
+			entry = EntryType::EntryFile;
 		} else if ( compare( "mixed", typeElement ) == 0 ||
                     compare( "xa", typeElement ) == 0 || //alias xa and str to mixed
                     compare( "str", typeElement ) == 0 )
 		{
-			entry = iso::EntrySTR;
+			entry = EntryType::EntryXA;
 		}
 		else if ( compare( "da", typeElement ) == 0 )
 		{
-			entry = iso::EntryDA;
+			entry = EntryType::EntryDA;
 			if ( !global::cuefile )
 			{
 				if ( !global::QuietMode )
@@ -1130,7 +1130,7 @@ static bool ParseFileEntry(iso::DirTreeClass* dirTree, const tinyxml2::XMLElemen
 			return false;
 		}
 
-		if ( found_da && entry != iso::EntryDA )
+		if ( found_da && entry != EntryType::EntryDA )
 		{
 			if ( !global::QuietMode )
 			{
@@ -1177,7 +1177,7 @@ static bool ParseDummyEntry(iso::DirTreeClass* dirTree, const tinyxml2::XMLEleme
 	}
 
 
-	dirTree->AddDummyEntry( atoi( dirElement->Attribute( "sectors" ) ), dummyType );
+	dirTree->AddDummyEntry( atoi( dirElement->Attribute(xml::attrib::NUM_DUMMY_SECTORS) ), dummyType );
 	return true;
 }
 
