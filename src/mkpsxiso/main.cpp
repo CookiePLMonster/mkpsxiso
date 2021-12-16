@@ -47,6 +47,16 @@ int PackFileAsCDDA(cd::IsoWriter* writer, const std::filesystem::path& audioFile
 
 int compare( const char* a, const char* b );
 
+// Helper wrapper to simplify dealing with paths on Windows
+ma_result ma_decoder_init_path(const std::filesystem::path& pFilePath, const ma_decoder_config* pConfig, ma_decoder* pDecoder)
+{
+#ifdef _WIN32
+	return ma_decoder_init_file_w(pFilePath.c_str(), pConfig, pDecoder);
+#else
+	return ma_decoder_init_file(pFilePath.c_str(), pConfig, pDecoder);
+#endif
+}
+
 
 int Main(int argc, char* argv[])
 {
@@ -1268,27 +1278,25 @@ int PackFileAsCDDA(cd::IsoWriter* writer, const std::filesystem::path& audioFile
     ma_decoder decoder;	
 	ma_decoder_config decoderConfig = ma_decoder_config_init(ma_format_s16, 2, 44100);	
 	bool isLossy = false;
-	bool isPCM = false;
 	long pcmBytesLeft;
-	FILE *pcmFp;
 	// determine which format to try based on file extension
     DecoderAudioFormats tryorder[4] = {DAF_WAV, DAF_FLAC, DAF_MP3, DAF_PCM};
-	const auto& extension = audioFile.extension().string();
+	const auto& extension = audioFile.extension().u8string();
 	if(extension.size() >= 4)
 	{
 		//nothing to change if wav
-		if(strcasecmp(extension.c_str(), ".flac") == 0)
+		if(compare(extension.c_str(), ".flac") == 0)
 		{
 			tryorder[0] = DAF_FLAC;
 			tryorder[1] = DAF_WAV;
 		}
-		else if(strcasecmp(extension.c_str(), ".mp3") == 0)
+		else if(compare(extension.c_str(), ".mp3") == 0)
 		{
 			tryorder[0] = DAF_MP3;
 			tryorder[1] = DAF_WAV;
 			tryorder[2] = DAF_FLAC;
 		}
-		else if((strcasecmp(extension.c_str(), ".pcm") == 0) || (strcasecmp(extension.c_str(), ".raw") == 0))
+		else if((compare(extension.c_str(), ".pcm") == 0) || (compare(extension.c_str(), ".raw") == 0))
 		{
 			tryorder[0] = DAF_PCM;
 			tryorder[1] = DAF_WAV;
@@ -1296,24 +1304,26 @@ int PackFileAsCDDA(cd::IsoWriter* writer, const std::filesystem::path& audioFile
 			tryorder[3] = DAF_MP3;
 		}
 	}
-    const int num_tries = (sizeof(tryorder)/sizeof(tryorder[0]));
+	unique_file pcmFp;
+
+	const int num_tries = std::size(tryorder);
 	int i;
 	for(i = 0; i < num_tries; i++)
 	{
 		if(tryorder[i] == DAF_WAV)
 		{
 	        decoderConfig.encodingFormat = ma_encoding_format_wav;
-	        if(MA_SUCCESS == ma_decoder_init_file(audioFile.c_str(), &decoderConfig, &decoder)) break;				
+	        if(MA_SUCCESS == ma_decoder_init_path(audioFile, &decoderConfig, &decoder)) break;				
 		}
         else if(tryorder[i] == DAF_FLAC)
 		{
 	        decoderConfig.encodingFormat = ma_encoding_format_flac;
-	        if(MA_SUCCESS == ma_decoder_init_file(audioFile.c_str(), &decoderConfig, &decoder)) break;
+	        if(MA_SUCCESS == ma_decoder_init_path(audioFile, &decoderConfig, &decoder)) break;
 		}
 		else if(tryorder[i] == DAF_MP3)
 		{
 	        decoderConfig.encodingFormat = ma_encoding_format_mp3;
-	        if(MA_SUCCESS == ma_decoder_init_file(audioFile.c_str(), &decoderConfig, &decoder))
+	        if(MA_SUCCESS == ma_decoder_init_path(audioFile, &decoderConfig, &decoder))
 	        {
 	        	isLossy = true;
 	        	break;
@@ -1321,41 +1331,41 @@ int PackFileAsCDDA(cd::IsoWriter* writer, const std::filesystem::path& audioFile
 		}
 		else if(tryorder[i] == DAF_PCM)
 		{
-			printf("\n    WARN: Guessing it's just signed 16 bit stereo @ 44100 kHz pcm audio\n");		
-	        if((pcmFp = fopen( audioFile.c_str(), "rb" )) != NULL)
+			printf("\n    WARN: Guessing it's just signed 16 bit stereo @ 44100 kHz pcm audio\n");
+			unique_file fp = OpenScopedFile(audioFile, "rb");
+	        if(fp)
 	        {
-	        	do {
-	        	    if(fseek(pcmFp, 0, SEEK_END) != 0)
-	                {
-	                	printf("    ERROR: (PCM) fseek failed\n");
-	                	break;
-	                } 
-	                pcmBytesLeft = ftell(pcmFp);    
-	                if(pcmBytesLeft < 0)
-	                {
-	                	printf("    ERROR: (PCM) ftell failed\n");
-	                	break;
-	                }
-	        		if(pcmBytesLeft == 0)
-	        		{
-	        			printf("    ERROR: (PCM) byte count is 0\n");
-	        			break;
-	        		}
-	        		// 2 channels of 16 bit samples
-	        		if((pcmBytesLeft % (2 * sizeof(int16_t))) != 0)
-	        		{
-	        			printf("    ERROR: (PCM) byte count indicates non-integer sample count\n");
-	        			break;
-	        		}
-	                if(fseek(pcmFp, 0, SEEK_SET) != 0)
-	                {
-	                	printf("    ERROR: (PCM) fseek failed\n");
-	                	break;
-	                }
-                    isPCM = true;
-	        	} while(0);
-	        	if(isPCM) break;
-	            fclose(pcmFp);
+				if(fseek(fp.get(), 0, SEEK_END) != 0)
+				{
+					printf("    ERROR: (PCM) fseek failed\n");
+					continue;
+				} 
+				pcmBytesLeft = ftell(fp.get());    
+				if(pcmBytesLeft < 0)
+				{
+					printf("    ERROR: (PCM) ftell failed\n");
+					continue;
+				}
+	        	if(pcmBytesLeft == 0)
+	        	{
+	        		printf("    ERROR: (PCM) byte count is 0\n");
+	        		continue;
+	        	}
+	        	// 2 channels of 16 bit samples
+	        	if((pcmBytesLeft % (2 * sizeof(int16_t))) != 0)
+	        	{
+	        		printf("    ERROR: (PCM) byte count indicates non-integer sample count\n");
+	        		continue;
+	        	}
+				if(fseek(fp.get(), 0, SEEK_SET) != 0)
+				{
+					printf("    ERROR: (PCM) fseek failed\n");
+					continue;
+				}
+
+				// Success, persist the opened file
+				pcmFp = std::move(fp);
+				break;
 	        }
 	        else
 	        {
@@ -1371,21 +1381,19 @@ int PackFileAsCDDA(cd::IsoWriter* writer, const std::filesystem::path& audioFile
 	}
 
     // if it's stereo s16lepcm just copy the data sector by sector
-	if(isPCM)
+	if(pcmFp)
 	{
 		unsigned char buff[CD_SECTOR_SIZE];
 		for(;;) {
 			memset(buff, 0x00, CD_SECTOR_SIZE);
-			size_t nowRead = fread( buff, 1, CD_SECTOR_SIZE, pcmFp );
+			size_t nowRead = fread( buff, 1, CD_SECTOR_SIZE, pcmFp.get() );
 			writer->WriteBytesRaw( buff, CD_SECTOR_SIZE);
 			if(pcmBytesLeft == nowRead)
 			{
-				fclose(pcmFp);
 				return true;
 			}
 			else if(nowRead != CD_SECTOR_SIZE)
 			{
-				fclose(pcmFp);				
 				printf("\n    ERROR: fread didn't read CD_SECTOR_SIZE\n");
 				return false;
 			}
@@ -1399,7 +1407,7 @@ int PackFileAsCDDA(cd::IsoWriter* writer, const std::filesystem::path& audioFile
 	ma_uint32 internalSampleRate; 
 	if(MA_SUCCESS != ma_data_source_get_data_format(decoder.pBackend, &internalFormat, &internalChannels, &internalSampleRate))
 	{
-		printf("\n    ERROR: unable to get internal metadata for %s\n", audioFile.c_str());
+		printf("\n    ERROR: unable to get internal metadata for %" PRFILESYSTEM_PATH "\n", audioFile.c_str());
 		ma_decoder_uninit(&decoder);
 	    return false;
 	} 
