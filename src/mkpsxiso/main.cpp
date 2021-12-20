@@ -17,6 +17,7 @@
 #define MA_NO_DEVICE_IO
 #define MINIAUDIO_IMPLEMENTATION
 #include "miniaudio.h"
+#include "miniaudio_pcm.h"
 
 
 namespace global
@@ -1304,8 +1305,8 @@ int PackFileAsCDDA(cd::IsoWriter* writer, const std::filesystem::path& audioFile
 			tryorder[3] = DAF_MP3;
 		}
 	}
+	VirtualWav vw;
 	unique_file pcmFp;
-
 	const int num_tries = std::size(tryorder);
 	int i;
 	for(i = 0; i < num_tries; i++)
@@ -1332,45 +1333,11 @@ int PackFileAsCDDA(cd::IsoWriter* writer, const std::filesystem::path& audioFile
 		else if(tryorder[i] == DAF_PCM)
 		{
 			printf("\n    WARN: Guessing it's just signed 16 bit stereo @ 44100 kHz pcm audio\n");
-			unique_file fp = OpenScopedFile(audioFile, "rb");
-	        if(fp)
-	        {
-				if(fseek(fp.get(), 0, SEEK_END) != 0)
-				{
-					printf("    ERROR: (PCM) fseek failed\n");
-					continue;
-				} 
-				pcmBytesLeft = ftell(fp.get());    
-				if(pcmBytesLeft < 0)
-				{
-					printf("    ERROR: (PCM) ftell failed\n");
-					continue;
-				}
-	        	if(pcmBytesLeft == 0)
-	        	{
-	        		printf("    ERROR: (PCM) byte count is 0\n");
-	        		continue;
-	        	}
-	        	// 2 channels of 16 bit samples
-	        	if((pcmBytesLeft % (2 * sizeof(int16_t))) != 0)
-	        	{
-	        		printf("    ERROR: (PCM) byte count indicates non-integer sample count\n");
-	        		continue;
-	        	}
-				if(fseek(fp.get(), 0, SEEK_SET) != 0)
-				{
-					printf("    ERROR: (PCM) fseek failed\n");
-					continue;
-				}
-
-				// Success, persist the opened file
-				pcmFp = std::move(fp);
+			if(MA_SUCCESS == ma_decoder_init_path_pcm(audioFile, &decoderConfig, &decoder, &vw))
+			{
+				pcmFp = unique_file(vw.file);
 				break;
-	        }
-	        else
-	        {
-	        	printf("    ERROR: (PCM) fopen failed\n");
-	        }
+			}
 		}
 	}
 	if(i == num_tries)
@@ -1378,27 +1345,6 @@ int PackFileAsCDDA(cd::IsoWriter* writer, const std::filesystem::path& audioFile
 		// no more formats to try, return false
 	    printf("    ERROR: No valid format found\n");
 	    return false;	
-	}
-
-    // if it's stereo s16lepcm just copy the data sector by sector
-	if(pcmFp)
-	{
-		unsigned char buff[CD_SECTOR_SIZE];
-		for(;;) {
-			memset(buff, 0x00, CD_SECTOR_SIZE);
-			size_t nowRead = fread( buff, 1, CD_SECTOR_SIZE, pcmFp.get() );
-			writer->WriteBytesRaw( buff, CD_SECTOR_SIZE);
-			if(pcmBytesLeft == nowRead)
-			{
-				return true;
-			}
-			else if(nowRead != CD_SECTOR_SIZE)
-			{
-				printf("\n    ERROR: fread didn't read CD_SECTOR_SIZE\n");
-				return false;
-			}
-			pcmBytesLeft -= nowRead;
-		};	
 	}
 
     //  note if there's some data converting going on
