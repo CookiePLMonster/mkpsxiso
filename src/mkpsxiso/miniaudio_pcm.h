@@ -1,5 +1,4 @@
 #pragma once
-#include "platform.h"
 
 typedef struct {
     uint8_t header[44];
@@ -9,7 +8,19 @@ typedef struct {
     FILE *file;
 } VirtualWav;
 
-MA_API ma_result ma_decoder_init_path_pcm(const std::filesystem::path& pFilePath, ma_decoder_config* pConfig, ma_decoder* pDecoder, VirtualWav *pUserData);
+MA_API ma_result ma_decoder_init_FILE_pcm(FILE *file, ma_decoder_config* pConfig, ma_decoder* pDecoder, VirtualWav *pUserData);
+
+#ifdef __cplusplus
+#include "platform.h"
+#include "common.h"
+
+class VirtualWavEx : public VirtualWav {
+    public:
+    unique_file pcmFp;
+};
+
+MA_API ma_result ma_decoder_init_path_pcm(const std::filesystem::path& pFilePath, ma_decoder_config* pConfig, ma_decoder* pDecoder, VirtualWavEx *pUserData);
+#endif
 
 #if defined(MINIAUDIO_IMPLEMENTATION) || defined(MA_IMPLEMENTATION)
 
@@ -24,7 +35,7 @@ static size_t virtual_wav_read(ma_decoder *pDecoder, void *pBufferOut, size_t by
         vw->vpos += headerread;
         bytesRead += headerread;
         bytesToRead -= headerread;
-        pBufferOut = ((uint8_t*)pBufferOut) + headerread;        
+        pBufferOut = ((uint8_t*)pBufferOut) + headerread;
     }
     if(bytesToRead > 0)
     {
@@ -94,61 +105,54 @@ static ma_bool32 virtual_wav_seek(ma_decoder *pDecoder, ma_int64 byteOffset, ma_
     return MA_TRUE;
 }
 
-static long stdio_file_size(FILE *file)
+#if !defined(_MSC_VER) && !((defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 1) || defined(_XOPEN_SOURCE) || defined(_POSIX_SOURCE)) && !defined(MA_BSD)
+int fileno(FILE *stream);
+#endif
+
+static ma_result stdio_file_size(FILE *file, uint64_t *pSizeInBytes)
 {
-    if(fseek(file, 0, SEEK_END) != 0)
-	{
-		printf("    ERROR: (PCM) fseek failed\n");
-		return -1;
-	} 
-	const long pcmSize = ftell(file);    
-	if(pcmSize < 0)
-	{
-		printf("    ERROR: (PCM) ftell failed\n");
-        return -1;
+    int fd;
+    struct stat info;
+
+    MA_ASSERT(file  != NULL);
+
+#if defined(_MSC_VER)
+    fd = _fileno((FILE*)file);
+#else
+    fd =  fileno((FILE*)file);
+#endif
+
+    if (fstat(fd, &info) != 0) {
+        return ma_result_from_errno(errno);
     }
-    if(fseek(file, 0, SEEK_SET) != 0)
-	{
-		printf("    ERROR: (PCM) fseek failed\n");
-		return -1;
-	}
-    return pcmSize;
+
+    *pSizeInBytes = info.st_size;
+
+    return MA_SUCCESS;
 }
 
-// feed to pcm file to miniaudio as a wav file
-MA_API ma_result ma_decoder_init_path_pcm(const std::filesystem::path& pFilePath, ma_decoder_config* pConfig, ma_decoder* pDecoder, VirtualWav *pUserData)
+MA_API ma_result ma_decoder_init_FILE_pcm(FILE *file, ma_decoder_config* pConfig, ma_decoder* pDecoder, VirtualWav *pUserData)
 {
-    FILE *file = OpenFile(pFilePath, "rb");
-    if(file == nullptr)
+    uint64_t pcmSize;
+    if(stdio_file_size(file, &pcmSize) != MA_SUCCESS)
     {
-        return !MA_SUCCESS;
-    }
-
-    const long pcmSize = stdio_file_size(file);
-    if(pcmSize == -1)
-    {
-        fclose(file);
         return !MA_SUCCESS;
     }
     else if(pcmSize == 0)
 	{
 		printf("    ERROR: (PCM) byte count is 0\n");
-		fclose(file);
         return !MA_SUCCESS;
 	}
 	// 2 channels of 16 bit samples
 	else if((pcmSize % (2 * sizeof(int16_t))) != 0)
 	{
 		printf("    ERROR: (PCM) byte count indicates non-integer sample count\n");
-		fclose(file);
         return !MA_SUCCESS;
 	}
-				
 
     pUserData->pos = 0;
     pUserData->vpos = 0;
     pUserData->vsize = pcmSize+44;
-
 
     memcpy(&pUserData->header[0], "RIFF", 4);
     const unsigned chunksize = (44 - 8) + pcmSize;
@@ -175,8 +179,8 @@ MA_API ma_result ma_decoder_init_path_pcm(const std::filesystem::path& pFilePath
     pUserData->header[27] = samplerate >> 24;
     const unsigned bitspersample = 16;
     const unsigned byteRate = (samplerate * numchannels * (bitspersample/8));
-    pUserData->header[28] = byteRate;
-    pUserData->header[29] = byteRate >> 8;
+    pUserData->header[28] = (uint8_t)byteRate;
+    pUserData->header[29] = (uint8_t)(byteRate >> 8);
     pUserData->header[30] = byteRate >> 16;
     pUserData->header[31] = byteRate >> 24;
     const uint16_t blockalign = numchannels * (bitspersample/8);;
@@ -195,11 +199,27 @@ MA_API ma_result ma_decoder_init_path_pcm(const std::filesystem::path& pFilePath
     pConfig->encodingFormat = ma_encoding_format_wav;
     if(ma_decoder_init(&virtual_wav_read, &virtual_wav_seek, pUserData, pConfig, pDecoder) != MA_SUCCESS)
     {
-        fclose(file);
         return !MA_SUCCESS;
     }
 
-    return MA_SUCCESS;    
+    return MA_SUCCESS;
 }
+#ifdef __cplusplus
+// feed to pcm file to miniaudio as a wav file
+MA_API ma_result ma_decoder_init_path_pcm(const std::filesystem::path& pFilePath, ma_decoder_config* pConfig, ma_decoder* pDecoder, VirtualWavEx *pUserData)
+{
+    unique_file file(OpenFile(pFilePath, "rb"));
+    if(!file)
+    {
+        return !MA_SUCCESS;
+    }
+    if(ma_decoder_init_FILE_pcm(file.get(), pConfig, pDecoder, pUserData) != MA_SUCCESS)
+    {
+        return !MA_SUCCESS;
+    }
+    pUserData->pcmFp = std::move(file);
+    return MA_SUCCESS;
+}
+#endif
 
 #endif

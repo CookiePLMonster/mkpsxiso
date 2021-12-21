@@ -123,7 +123,7 @@ int Main(int argc, char* argv[])
 	{
 		printf( "MKPSXISO " VERSION " - PlayStation ISO Image Maker\n" );
 		printf( "2017-2018 Meido-Tek Productions (Lameguy64)\n" );
-		printf( "2021 Silent and Chromaryu\n\n" );
+		printf( "2021 Silent, Chromaryu, and G4Vi\n\n" );
 	}
 
 	if ( argc == 1 )
@@ -1305,8 +1305,7 @@ int PackFileAsCDDA(cd::IsoWriter* writer, const std::filesystem::path& audioFile
 			tryorder[3] = DAF_MP3;
 		}
 	}
-	VirtualWav vw;
-	unique_file pcmFp;
+	VirtualWavEx vw;
 	const int num_tries = std::size(tryorder);
 	int i;
 	for(i = 0; i < num_tries; i++)
@@ -1333,11 +1332,7 @@ int PackFileAsCDDA(cd::IsoWriter* writer, const std::filesystem::path& audioFile
 		else if(tryorder[i] == DAF_PCM)
 		{
 			printf("\n    WARN: Guessing it's just signed 16 bit stereo @ 44100 kHz pcm audio\n");
-			if(MA_SUCCESS == ma_decoder_init_path_pcm(audioFile, &decoderConfig, &decoder, &vw))
-			{
-				pcmFp = unique_file(vw.file);
-				break;
-			}
+			if(MA_SUCCESS == ma_decoder_init_path_pcm(audioFile, &decoderConfig, &decoder, &vw)) break;
 		}
 	}
 	if(i == num_tries)
