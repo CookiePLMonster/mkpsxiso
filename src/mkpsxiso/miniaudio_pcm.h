@@ -117,9 +117,9 @@ static ma_result stdio_file_size(FILE *file, uint64_t *pSizeInBytes)
     MA_ASSERT(file  != NULL);
 
 #if defined(_MSC_VER)
-    fd = _fileno((FILE*)file);
+    fd = _fileno(file);
 #else
-    fd =  fileno((FILE*)file);
+    fd =  fileno(file);
 #endif
 
     if (fstat(fd, &info) != 0) {
