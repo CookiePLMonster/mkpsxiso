@@ -18,7 +18,10 @@
 * Supports mixed-mode CD-XA stream files such as XA audio and STR video.
 * Supports CDDA audio tracks from wav, flac, pcm, and mp3 files, both as DA files and just as audio tracks
 * Can output log of all files packed with details such as LBA, size and timecode offset.
-* `dumpsxiso` can extract CDDA tracks as wav, flac, and pcm
+* Extract CDDA tracks from ISO as wav, flac, and pcm.
+* Many images can be rebuilt 1:1 now.
+    * XML generation: by default in strict LBA order, but can instead sort by dir for pretty output.
+    * Timestamps and XA attributes are preserved.
 
 ## Binary Download
 
@@ -108,6 +111,7 @@ This can be avoided by minimizing identically named directories but its best to 
 * Add memory mapped ISO writing to improve packing speed
 * Fix directory records spanning more than 1 sector
 * dumpsxiso: add group by directory/pretty xml writing
+* Fix ECC and timestamp bugs
 * Massive refactor and cleanup, too many fixes and changes to list, see the commits for details
 
 **Version 1.27 (10/25/2021)**
