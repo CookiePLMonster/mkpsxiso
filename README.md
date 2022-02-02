@@ -7,7 +7,7 @@
 
 `mkpsxiso` is meant to provide a faster, cross-platform, modern replacement of the BUILDCD from the official development tools. BUILDCD unfortunately only runs on 16 bit DOS compatible systems and it's output format is unusable by modern CD burning tools. Other ISO creation tools such as MKISOFS do not allow controlling the precise order of files (necessary for optimizing access times) and do not support mixed-mode type files for CD streaming such as XA audio and MDEC video streams used by many PlayStation games. `mkpsxiso` outputs either a standard `.bin` and `.cue` or `.iso` ready to burn to CD or use in an emulator! The hope is that `mkpsxiso` tools ease PlayStation homebrew development and ROM hacking and reverse engineer efforts. `mkpsxiso` can also be used as a regular ISO creation tool that complies with the older ISO9660 standard with no Joliet extensions.
 
-`mkpsxiso` can properly license the image with the Sony license data during ISO building eliminating the use of the extra program. However, you must supply your own copy. It can be found in the PsyQ SDK, see [Starting PSX Development](https://psx.arthus.net/starting.html)
+`mkpsxiso` can properly license the image with the Sony license data during ISO building eliminating the use of the extra program. However, you must supply your own copy. It can be found in the PsyQ SDK, see [Starting PSX Development](https://psx.arthus.net/starting.html). `dumpsxiso` can also dump the license data of an existing disk.
 
 ## Features
 
@@ -25,7 +25,7 @@
 
 ## Binary Download
 
-[Releases](releases/latest) for Win32 and `ubuntu-latest`, both are built by github CI starting at v2.0
+[Releases](../../releases/latest) for Win32 and `ubuntu-latest`, both are built by github CI starting at v2.0
 
 [Ancient releases](https://github.com/Lameguy64/mkpsxiso/tree/gh-pages) (NOT RECOMMENDED)
 
