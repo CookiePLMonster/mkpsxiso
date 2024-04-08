@@ -334,12 +334,7 @@ std::optional<cd::IsoDirEntries::Entry> cd::IsoDirEntries::ReadEntry(cd::IsoRead
 
 	// Read identifier string
 	entry.identifier.resize(entry.entry.identifierLen);
-	reader->ReadBytes(entry.identifier.data(), entry.entry.identifierLen, true);
-
-	if (entry.identifier == "ST0D_00D.BIN;1")
-	{
-		int i = 0;
-	}
+	bytesRead += reader->ReadBytes(entry.identifier.data(), entry.entry.identifierLen, true);
 
 	// Strip trailing zeroes, if any
 	entry.identifier.resize(strlen(entry.identifier.c_str()));
@@ -348,15 +343,24 @@ std::optional<cd::IsoDirEntries::Entry> cd::IsoDirEntries::ReadEntry(cd::IsoRead
 	if ((entry.entry.identifierLen % 2) == 0)
     {
         reader->SkipBytes(1);
+        bytesRead += 1;
     }
 
 	// Read XA attribute data
-	reader->ReadBytes(&entry.extData, sizeof(entry.extData), true);
+	bytesRead += reader->ReadBytes(&entry.extData, sizeof(entry.extData), true);
 
 	// XA attributes are big endian, swap them
 	entry.extData.attributes = SwapBytes16(entry.extData.attributes);
 	entry.extData.ownergroupid = SwapBytes16(entry.extData.ownergroupid);
 	entry.extData.owneruserid = SwapBytes16(entry.extData.owneruserid);
+
+	// If there is more to this entry, it's some extensions we don't support,
+	// so skip through them
+	const size_t entryBytesLeft = entry.entry.entryLength - bytesRead;
+	if (entryBytesLeft > 0)
+	{
+		reader->SkipBytes(entryBytesLeft, true);
+	}
 
 	return entry;
 }
